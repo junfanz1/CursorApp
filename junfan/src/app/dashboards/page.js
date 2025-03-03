@@ -1,6 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import Notification from '@/components/Notification';
+import { supabase } from '@/lib/supabase';
+import { v4 as uuidv4 } from 'uuid';
 
 export default function Dashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -8,71 +11,90 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [visibleKeys, setVisibleKeys] = useState({});
+  const [notification, setNotification] = useState(null);
   const [newKeyData, setNewKeyData] = useState({
     name: '',
-    type: 'development',
-    monthlyLimit: 1000
+    type: 'development'
   });
 
-  // Mock data - replace with actual API calls
+  // Fetch API keys
   useEffect(() => {
-    setApiKeys([
-      { id: 1, name: 'sdfg', type: 'dev', usage: '32', key: 'tvly-dev-**********************' },
-      { id: 2, name: 'hello', type: 'dev', usage: '32', key: 'tvly-dev-**********************' },
-      { id: 3, name: 'hey!', type: 'dev', usage: '32', key: 'tvly-dev-**********************' },
-    ]);
+    fetchApiKeys();
   }, []);
 
-  const showNotification = (message, type = 'success') => {
-    const notification = document.createElement('div');
-    notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg ${
-      type === 'success' ? 'bg-green-500' : 'bg-red-500'
-    } text-white transform transition-all duration-500 ease-in-out z-50`;
-    notification.textContent = message;
-    document.body.appendChild(notification);
+  const fetchApiKeys = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('api_keys')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    // Remove notification after 3 seconds
-    setTimeout(() => {
-      notification.style.opacity = '0';
-      setTimeout(() => {
-        document.body.removeChild(notification);
-      }, 500);
-    }, 3000);
+      if (error) throw error;
+      setApiKeys(data || []);
+    } catch (error) {
+      console.error('Error fetching API keys:', error.message);
+    }
+  };
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000); // Hide after 3 seconds
+  };
+
+  const handleCopyToClipboard = async (value) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      showNotification('API key copied to clipboard');
+    } catch (error) {
+      showNotification('Failed to copy to clipboard', 'error');
+    }
   };
 
   const handleCreateKey = async () => {
     try {
+      if (!newKeyData.name) {
+        showNotification('Name is required', 'error');
+        return;
+      }
+
       const newKey = {
-        id: apiKeys.length + 1,
         name: newKeyData.name,
-        type: newKeyData.type === 'development' ? 'dev' : 'prod',
-        usage: '0',
-        key: `tvly-${newKeyData.type === 'development' ? 'dev' : 'prod'}-**********************`
+        value: `junfan-${newKeyData.type === 'development' ? 'dev' : 'prod'}-${uuidv4()}`,
+        usage: 0
       };
-      setApiKeys([...apiKeys, newKey]);
+
+      const { data, error } = await supabase
+        .from('api_keys')
+        .insert([newKey])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setApiKeys([data, ...apiKeys]);
       setIsCreating(false);
-      setNewKeyData({ name: '', type: 'development', monthlyLimit: 1000 });
-      showNotification('API key created successfully!');
+      setNewKeyData({ name: '', type: 'development' });
+      showNotification('API key created successfully');
     } catch (error) {
+      console.error('Error creating API key:', error.message);
       showNotification('Failed to create API key', 'error');
     }
   };
 
   const handleDeleteKey = async (id) => {
     try {
-      setApiKeys(apiKeys.filter(key => key.id !== id));
-      showNotification('API key deleted successfully!');
-    } catch (error) {
-      showNotification('Failed to delete API key', 'error');
-    }
-  };
+      const { error } = await supabase
+        .from('api_keys')
+        .delete()
+        .eq('id', id);
 
-  const handleCopyKey = async (key) => {
-    try {
-      await navigator.clipboard.writeText(key.replace('**********************', 'abcdef1234567890abcdef'));
-      showNotification('API key copied to clipboard!');
+      if (error) throw error;
+
+      setApiKeys(apiKeys.filter(key => key.id !== id));
+      showNotification('API key deleted successfully');
     } catch (error) {
-      showNotification('Failed to copy API key', 'error');
+      console.error('Error deleting API key:', error.message);
+      showNotification('Failed to delete API key', 'error');
     }
   };
 
@@ -84,26 +106,36 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="flex">
+    <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
       <div className={`transition-all duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-64'}`}>
         <Sidebar isOpen={isSidebarOpen} onToggle={() => setIsSidebarOpen(!isSidebarOpen)} />
       </div>
 
-      {/* Toggle button when sidebar is closed */}
+      {/* Toggle button when sidebar is closed - Updated to match X button style */}
       {!isSidebarOpen && (
         <button
           onClick={() => setIsSidebarOpen(true)}
-          className="fixed left-4 top-4 z-20 p-2 text-gray-600 hover:text-gray-800"
+          className="fixed left-3 top-3 w-6 h-6 bg-white rounded-full border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-500 shadow-sm z-20"
+          aria-label="Open sidebar"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7" />
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            className="h-4 w-4" 
+            viewBox="0 0 20 20" 
+            fill="currentColor"
+          >
+            <path 
+              fillRule="evenodd" 
+              d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" 
+              clipRule="evenodd" 
+            />
           </svg>
         </button>
       )}
 
       {/* Main content */}
-      <div className="flex-1 min-h-screen p-8">
+      <div className="flex-1 p-8">
         <div className="max-w-6xl mx-auto">
           {/* Header Section */}
           <div className="mb-8">
@@ -178,7 +210,7 @@ export default function Dashboard() {
                       </td>
                       <td className="py-4">{apiKey.usage}</td>
                       <td className="py-4 font-mono text-sm">
-                        {visibleKeys[apiKey.id] ? apiKey.key.replace('**********************', 'abcdef1234567890abcdef') : apiKey.key}
+                        {visibleKeys[apiKey.id] ? apiKey.value.replace('**********************', 'abcdef1234567890abcdef') : apiKey.value}
                       </td>
                       <td className="py-4">
                         <div className="flex gap-4 text-gray-500">
@@ -199,7 +231,7 @@ export default function Dashboard() {
                             )}
                           </button>
                           <button 
-                            onClick={() => handleCopyKey(apiKey.key)}
+                            onClick={() => handleCopyToClipboard(apiKey.value)}
                             className="hover:text-gray-700"
                             title="Copy to clipboard"
                           >
@@ -210,7 +242,7 @@ export default function Dashboard() {
                           <button 
                             className="hover:text-gray-700"
                             onClick={() => {
-                              showNotification('Edit functionality coming soon!');
+                              alert('Edit functionality coming soon!');
                             }}
                             title="Edit key"
                           >
@@ -287,25 +319,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="mb-6">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="text-blue-500"
-                  />
-                  <span>Limit monthly usage*</span>
-                </label>
-                <input
-                  type="number"
-                  value={newKeyData.monthlyLimit}
-                  onChange={(e) => setNewKeyData({...newKeyData, monthlyLimit: e.target.value})}
-                  className="w-full px-4 py-2 border rounded-lg mt-2"
-                />
-                <p className="text-gray-500 text-sm mt-2">
-                  * If the combined usage of all your keys exceeds your plan's limit, all requests will be rejected.
-                </p>
-              </div>
-
               <div className="flex justify-end gap-4">
                 <button
                   onClick={() => setIsCreating(false)}
@@ -324,6 +337,15 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Notification */}
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
+      )}
     </div>
   );
 }
